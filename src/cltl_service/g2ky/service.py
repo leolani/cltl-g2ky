@@ -13,6 +13,8 @@ from flask.json import JSONEncoder
 
 from cltl.template.api import DemoProcessor
 
+from cltl.g2ky.api import GetToKnowYou
+
 logger = logging.getLogger(__name__)
 
 
@@ -25,20 +27,20 @@ class NumpyJSONEncoder(JSONEncoder):
         return super().default(obj)
 
 
-class TemplateService:
+class GetToKnowYouService:
     """
     Service used to integrate the component into applications.
     """
     @classmethod
-    def from_config(cls, processor: DemoProcessor, event_bus: EventBus, resource_manager: ResourceManager,
+    def from_config(cls, g2ky: GetToKnowYou, event_bus: EventBus, resource_manager: ResourceManager,
                     config_manager: ConfigurationManager):
-        config = config_manager.get_config("cltl.template")
+        config = config_manager.get_config("cltl.g2ky.events")
 
-        return cls(config.get("topic_in"), config.get("topic_out"), processor, event_bus, resource_manager)
+        return cls(config.get("topic_in"), config.get("topic_out"), g2ky, event_bus, resource_manager)
 
-    def __init__(self, input_topic: str, output_topic: str, processor: DemoProcessor,
+    def __init__(self, input_topic: str, output_topic: str, g2ky: GetToKnowYou,
                  event_bus: EventBus, resource_manager: ResourceManager):
-        self._processor = processor
+        self._g2ky = g2ky
 
         self._event_bus = event_bus
         self._resource_manager = resource_manager
@@ -51,7 +53,8 @@ class TemplateService:
 
     def start(self, timeout=30):
         self._topic_worker = TopicWorker([self._input_topic], self._event_bus, provides=[self._output_topic],
-                                         resource_manager=self._resource_manager, processor=self._process)
+                                         scheduled=0.1, resource_manager=self._resource_manager,
+                                         processor=self._process)
         self._topic_worker.start().wait()
 
     def stop(self):
@@ -88,7 +91,18 @@ class TemplateService:
         return self._app
 
     def _process(self, event: Event[TextSignalEvent]):
-        response = self._processor.respond(event.payload.signal.text)
+        response = None
+        if event == None:
+            response = self._g2ky.response()
+        if event.metadata.topic == self._input_topic:
+            response = self._g2ky.utterance_detected(event.payload.signal.text)
+        elif event.metadata.topic == self._face_topic:
+            response = self._g2ky.utterance_detected(event.payload.signal.person_id)
+
+        id, name = self._g2ky.speaker
+        if id and name:
+            speaker_event =  self._create_speaker_payload(id, name)
+            self._event_bus.publish(self._speaker_topic, Event.for_payload(speaker_event))
 
         if response:
             eliza_event = self._create_payload(response)
@@ -98,3 +112,8 @@ class TemplateService:
         signal = TextSignal.for_scenario(None, timestamp_now(), timestamp_now(), None, response)
 
         return TextSignalEvent.create(signal)
+
+    def _create_speaker_payload(self, id, name):
+        # return AnnotationEvent(id, name)
+        # TODO
+        return None
