@@ -1,55 +1,29 @@
-# cltl-template
+# cltl-g2ky
 
-This repo is a template for the other services.
-Each service has its own repo and a Dockerfile.
-Their structure will inherit from this repo.
+This repository is a component of the [Leolani framework](https://github.com/leolani/cltl-combot).
+For usage of the component within the framework see the instructions there.
 
-## Start from this template
 
-To start from this template:
-* Create a new empty repository on github with name <MODULE_NAME>.
-* Clone this repository
-  ```
-  git clone https://github.com/leolani/cltl-template.git 
-  ```
-  or to add it as git submodule
-  ```
-  git submodule add --name <MODULE_NAME> https://github.com/leolani/cltl-template.git <MODULE_NAME>
-  git submodule set-url <MODULE_NAME> <REMOTE_URL>
-  ```
-* Reomve the old remote:
-  ```
-  git remote remove origin
-  ```
-* Add the new emtpy repository and push the main branch:
-     ```
-  git remote add origin <REMOTE_URL>
-  git push -u origin main
-  ```    
+## Contributing
 
-## For a typical Python component
+Contributions are what make the open source community such an amazing place to be learn, inspire, and create. Any contributions you make are **greatly appreciated**.
 
-### API
+1. Fork the Project
+2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your Changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the Branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
 
-Create an API with domain data classes and an interface providing the functionality of the component.
 
-Use *dataclasses* for the domain objects and avoid custom methods. This makes it possible to deserialize
-to `SimpleNamespace` objects. Otherwise you eventually need to use a custom deserializer to convert from
-JSON inputs to Python class instances. 
+<!-- LICENSE -->
+## License
 
-### Command line
+Distributed under the MIT License. See [`LICENSE`](https://github.com/leolani/cltl-combot/blob/main/LICENCE) for more information.
 
-Create an main class that let's you invoke your service as Pyhton script from the command line that can also
-be used to run it inside a Docker container.
+<!-- CONTACT -->
+## Authors
 
-### Python package
-
-Create a library package with at your API, implemntation and service. 
-In setup.py specify only dependencies of the API as required, and add dependencies of implementation
-and service as extra requirements. Like this the API can be used without adding unneded dependecies
-for the user of the API.
-
-### Docker image
-
-Create a Docker image that runs your compoenent, including the required REST endpoints/Event handlers.
-
+* [Taewoon Kim](https://tae898.github.io/)
+* [Thomas Baier](https://www.linkedin.com/in/thomas-baier-05519030/)
+* [Selene Báez Santamaría](https://selbaez.github.io/)
+* [Piek Vossen](https://github.com/piekvossen)
