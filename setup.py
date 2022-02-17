@@ -9,12 +9,12 @@ with open("VERSION", "r") as fh:
 
 
 setup(
-    name='cltl.template',
+    name='cltl.g2ky',
     version=version,
     package_dir={'': 'src'},
     packages=find_namespace_packages(include=['cltl.*', 'cltl_service.*'], where='src'),
     data_files=[('VERSION', ['VERSION'])],
-    url="https://github.com/leolani/cltl-template",
+    url="https://github.com/leolani/cltl-g2ky",
     license='MIT License',
     author='CLTL',
     author_email='t.baier@vu.nl',
@@ -22,13 +22,12 @@ setup(
     long_description=long_description,
     long_description_content_type="text/markdown",
     python_requires='>=3.8',
-    install_requires=['cltl.combot'],
+    install_requires=['cltl.face-recognition'],
     extras_require={
-        "impl": [
-            "numpy"
-        ],
+        "impl": [],
         "service": [
             "emissor",
+            "cltl.combot",
             "flask"
         ]}
 )
