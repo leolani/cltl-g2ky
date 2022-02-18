@@ -28,6 +28,5 @@ setup(
         "service": [
             "emissor",
             "cltl.combot",
-            "flask"
         ]}
 )

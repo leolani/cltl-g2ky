@@ -1,6 +1,6 @@
 import enum
 from collections import Counter
-from typing import Optional, Collection, Tuple, Mapping
+from typing import Optional, Collection, Tuple, Mapping, Iterable
 
 from cltl.face_recognition.api import Face
 
@@ -51,12 +51,13 @@ class MemoryGetToKnowYou(GetToKnowYou):
 
         return None
 
-    def persons_detected(self, persons: Collection[Tuple[str, Face]]) -> Optional[str]:
+    def persons_detected(self, persons: Iterable[Tuple[str, Face]]) -> Optional[str]:
         if self._state == self.State.KNOWN:
             if self._id not in list(zip(*persons))[0]:
                 self._state = self.State.START
                 return self.persons_detected(persons)
 
+        persons = list(persons)
         if len(persons) == 0:
             return "Hi, anyone there? I can't see you.."
 

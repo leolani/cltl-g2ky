@@ -1,6 +1,6 @@
 SHELL = /bin/bash
 
-project_dependencies ?= $(addprefix $(project_root)/, cltl-requirements cltl-combot emissor)
+project_dependencies ?= $(addprefix $(project_root)/, cltl-requirements cltl-combot cltl-face-recognition emissor)
 
 git_remote ?= https://github.com/leolani
 
