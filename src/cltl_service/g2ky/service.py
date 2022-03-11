@@ -13,99 +13,12 @@ from emissor.representation.annotation import AnnotationType
 from emissor.representation.scenario import TextSignal, Mention, Annotation
 
 from cltl.g2ky.api import GetToKnowYou
+from cltl_service.g2ky.groupby import GroupProcessor, Group, GroupByProcessor
 
 logger = logging.getLogger(__name__)
 
 
-class _FaceCache:
-    def __init__(self):
-        self._img_id = None
-        self._faces = None
-        self._ids = None
-        self._complete = False
-        self._ignored = set()
-
-    @property
-    def complete(self):
-        return self._complete or (self._img_id is not None
-                                  and self._faces is not None
-                                  and self._ids is not None)
-
-    def set_image(self, id: str) -> bool:
-        if id in self._ignored:
-            logger.warning("Image signal event received after annotation: {}", id)
-            return False
-
-        if not self.complete:
-            self._ignored.add(id)
-            return False
-
-        self.__init__()
-        self._img_id = id
-
-        return True
-
-    def set_faces(self, mentions: List[Mention]) -> bool:
-        image_id = self._get_image_id(mentions)
-        if image_id != self._img_id:
-            self._ignored.add(id)
-            return False
-
-        if len(mentions) == 1 and len(mentions[0].annotation) == 0:
-            self._complete = True
-        else:
-            self._faces = {self._to_segment_key(mention.segment): self._to_annotation_value(mention.annotation)
-                           for mention in mentions}
-        return True
-
-    def set_ids(self, mentions: Iterable[Mention]) -> bool:
-        image_id = self._get_image_id(mentions)
-        if image_id != self._img_id:
-            self._ignored.add(id)
-            return False
-
-        self._ids = {self._to_segment_key(mention.segment): self._to_annotation_value(mention.annotation)
-                     for mention in mentions}
-
-        return True
-
-    def _get_image_id(self, mentions: Iterable[Mention]) -> str:
-        image_ids = {segment.container_id for mention in mentions for segment in mention.segment}
-        if len(image_ids) != 1:
-            raise ValueError("Expected exactly on image container")
-        image_id = next(iter(image_ids))
-
-        return image_id
-
-    def get_persons(self) -> Iterable[Tuple[str, Face]]:
-        if not self.complete:
-            raise ValueError("Not all annotations received")
-
-        if self._ids is None:
-            return []
-
-        return [(self._ids[key], face) for key, face in self._faces.items()]
-
-
-    def _to_segment_key(self, segments):
-        if len(segments) == 0:
-            raise ValueError("Got Mention without segment")
-
-        if len(segments) > 1:
-            logger.warning("Got mention with more than one segment: {}", segments)
-
-        return dataclasses.astuple(segments[0])
-
-    def _to_annotation_value(self, annotations):
-        if len(annotations) == 0:
-            raise ValueError("Got Mention without annotation")
-
-        if len(annotations) > 1:
-            logger.warning("Got mention with more than one annotation: {}", annotations)
-
-        return annotations[0].value
-
-class GetToKnowYouService:
+class GetToKnowYouService(GroupProcessor):
     """
     Service used to integrate the component into applications.
     """
@@ -133,10 +46,11 @@ class GetToKnowYouService:
         self._topic_worker = None
         self._app = None
 
-        self._face_cache = _FaceCache()
+        self._face_processor = GroupByProcessor(self, self.get_key)
 
     def start(self, timeout=30):
-        self._topic_worker = TopicWorker([self._utterance_topic, self._face_topic, self._id_topic], self._event_bus,
+        self._topic_worker = TopicWorker([self._utterance_topic, self._image_topic, self._face_topic, self._id_topic],
+                                         self._event_bus,
                                          provides=[self._response_topic],
                                          resource_manager=self._resource_manager,
                                          scheduled=0.1,
@@ -153,26 +67,19 @@ class GetToKnowYouService:
 
     def _process(self, event: Event[Union[TextSignalEvent, AnnotationEvent]]):
         response = None
-        if event == None:
+
+        if event is None:
             response = self._g2ky.response()
-        if event.metadata.topic == self._utterance_topic:
+        elif event.metadata.topic == self._utterance_topic:
             response = self._g2ky.utterance_detected(event.payload.signal.text)
             id, name = self._g2ky.speaker
-            if id and name:
-                speaker_event = self._create_speaker_payload(event.payload.signal, id, name)
-                self._event_bus.publish(self._speaker_topic, Event.for_payload(speaker_event))
-        elif event.metadata.topic == self._image_topic:
-            if not self._face_cache.set_image(event.payload.signal.id):
-                return
-        elif event.metadata.topic == self._id_topic:
-            if not self._face_cache.set_ids(event.payload.mentions):
-                return
-        elif event.metadata.topic == self._face_topic:
-            if not self._face_cache.set_ids(event.payload.mentions):
-                return
-
-        if self._face_cache.complete:
-            response = self._g2ky.persons_detected(self._face_cache.get_persons())
+            # TODO
+            # if id and name:
+            #     speaker_event = self._create_speaker_payload(event.payload.signal, id, name)
+            #     self._event_bus.publish(self._response_topic, Event.for_payload(speaker_event))
+        elif event.metadata.topic in [self._image_topic, self._id_topic, self._face_topic]:
+            self._face_processor.process(event)
+            return
 
         if response:
             response_payload = self._create_payload(response)
@@ -184,5 +91,95 @@ class GetToKnowYouService:
         return TextSignalEvent.create(signal)
 
     def _create_speaker_payload(self, signal: TextSignal, id: str, name: str):
-        speaker_annotation = Annotation(AnnotationType.UTTERANCE, (id, name), self.__name__, timestamp_now())
+        speaker_annotation = Annotation(AnnotationType.UTTERANCE, (id, name), __name__, timestamp_now())
         return Mention([signal.ruler], [speaker_annotation])
+
+    def new_group(self, image_id):
+        return FaceGroup(image_id, self._face_topic, self._id_topic)
+
+    def process_group(self, group):
+        response = self._g2ky.persons_detected(group.get_persons())
+        if response:
+            response_payload = self._create_payload(response)
+            self._event_bus.publish(self._response_topic, Event.for_payload(response_payload))
+
+    def get_key(self, event):
+        if event.metadata.topic == self._image_topic:
+            return event.payload.signal.id
+        elif event.metadata.topic in [self._id_topic, self._face_topic]:
+            return self._get_image_id(event.payload.mentions)
+
+    def _get_image_id(self, mentions: Iterable[Mention]) -> str:
+        image_ids = {segment.container_id
+                     for mention in mentions
+                     for segment in mention.segment}
+
+        if len(image_ids) != 1:
+            raise ValueError("Expected exactly on image container, was %s", len(image_ids))
+
+        return next(iter(image_ids))
+
+
+class FaceGroup(Group):
+    def __init__(self, image_id, face_topic, id_topic):
+        super().__init__()
+        self._face_topic = face_topic
+        self._id_topic = id_topic
+
+        self._img_id = image_id
+        self._faces = None
+        self._ids = None
+
+    @property
+    def complete(self) -> bool:
+        return self._faces is not None and self._ids is not None
+
+    def get_persons(self) -> Iterable[Tuple[str, Face]]:
+        if not self.complete:
+            raise ValueError("Not all annotations received")
+
+        if self._ids is None:
+            return []
+
+        return [(self._ids[key], face) for key, face in self._faces.items()]
+
+    def add(self, event: Event):
+        if event.metadata.topic == self._id_topic:
+            self._set_ids(event.payload.mentions)
+        elif event.metadata.topic == self._face_topic:
+            self._set_faces(event.payload.mentions)
+
+    def _set_faces(self, mentions: List[Mention]):
+        has_faces = len(mentions) == 1 and mentions[0].annotations and mentions[0].annotations[0].value
+        logger.debug("Received %sface for image %s", "" if has_faces else "no ", self._img_id)
+
+        if not has_faces:
+            self._faces = {}
+            self._ids = []
+        else:
+            self._faces = {self._to_segment_key(mention.segment): self._to_annotation_value(mention.annotations)
+                           for mention in mentions}
+
+    def _set_ids(self, mentions: Iterable[Mention]):
+        logger.debug("Received ids for image %s", self._img_id)
+
+        self._ids = {self._to_segment_key(mention.segment): self._to_annotation_value(mention.annotations)
+                     for mention in mentions}
+
+    def _to_segment_key(self, segments):
+        if len(segments) == 0:
+            raise ValueError("Got Mention without segment")
+
+        if len(segments) > 1:
+            logger.warning("Got mention with more than one segment: {}", segments)
+
+        return dataclasses.astuple(segments[0])
+
+    def _to_annotation_value(self, annotations):
+        if len(annotations) == 0:
+            raise ValueError("Got Mention without annotation")
+
+        if len(annotations) > 1:
+            logger.warning("Got mention with more than one annotation: {}", annotations)
+
+        return annotations[0].value
