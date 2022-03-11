@@ -1,10 +1,13 @@
 import enum
+import logging
 from collections import Counter
 from typing import Optional, Collection, Tuple, Mapping, Iterable
 
 from cltl.face_recognition.api import Face
 
 from cltl.g2ky.api import GetToKnowYou
+
+logger = logging.getLogger(__name__)
 
 
 class MemoryGetToKnowYou(GetToKnowYou):
@@ -32,6 +35,8 @@ class MemoryGetToKnowYou(GetToKnowYou):
         return self._state
 
     def utterance_detected(self, utterance: str) -> Optional[str]:
+        logger.debug("Received utterance %s in state %s", utterance, self._state.name)
+
         if self._state == self.State.START:
             return "Hi, I can't see you.."
         elif self._state == self.State.GAZE:
@@ -53,11 +58,14 @@ class MemoryGetToKnowYou(GetToKnowYou):
 
     def persons_detected(self, persons: Iterable[Tuple[str, Face]]) -> Optional[str]:
         if self._state == self.State.KNOWN:
+            logger.debug("Received persons in state %s", self._state.name)
             if self._id not in list(zip(*persons))[0]:
                 self._state = self.State.START
                 return self.persons_detected(persons)
 
         persons = list(persons)
+        logger.debug("Received %s persons in state %s", len(persons), self._state.name)
+
         if len(persons) == 0:
             return "Hi, anyone there? I can't see you.."
 
@@ -76,16 +84,17 @@ class MemoryGetToKnowYou(GetToKnowYou):
             ids = list(zip(*self._faces))[0]
             self._id = Counter(ids).most_common()[0][0]
             if len(set(ids)) > 1:
+                logger.debug("Filter multiple faces for %s", self._id)
                 self._faces = [(id, face) for id, face in self._faces if id == self._id]
 
-            if len(self._faces) == 10:
+            if len(self._faces) == 5:
+                logger.debug("Memorized face for id %s", self._id)
                 self._state = self.State.QUERY
                 return f"What is your name, stranger?"
 
         return None
 
     def response(self) -> Optional[str]:
-        if self._state == "start":
-            return "Hi, anyone there? I can't see you.."
-
+        # if self._state == self.State.START:
+        #     return "Hi, anyone there? I can't see you.."
         return None
