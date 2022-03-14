@@ -1,91 +1,46 @@
 import unittest
 
-import numpy as np
-from cltl.backend.api.camera import Bounds
-from cltl.face_recognition.api import Face
-from emissor.representation.entity import Gender
+from cltl_service.g2ky.groupby import SizeGroupProcessor, GroupByProcessor
 
-from cltl.g2ky.memory import MemoryGetToKnowYou
 
-EMPTY_ARRAY = np.empty((0,))
+class TestGroupBy(unittest.TestCase):
+    def test_grouping(self):
+        group_events = []
+        grouping = SizeGroupProcessor(3, lambda events: group_events.extend(events))
+        groupby = GroupByProcessor(grouping, key=lambda x: x[0])
 
-class TestMemoryG2KY(unittest.TestCase):
-    def setUp(self) -> None:
-        self.g2ky = MemoryGetToKnowYou()
+        self.assertEqual("1", groupby.get_key("10"))
 
-    def test_regular_flow(self):
-        self.assertEqual(MemoryGetToKnowYou.State.START, self.g2ky.state)
+        groupby.process("10")
+        self.assertEqual([], group_events)
+        groupby.process("11")
+        self.assertEqual([], group_events)
+        groupby.process("12")
+        self.assertEqual(["10", "11", "12"], group_events)
 
-        response = self.g2ky.persons_detected([("id1", Face(EMPTY_ARRAY, Gender.FEMALE, 1))])
-        self.assertEqual("Hi Stranger! We haven't met, let me look at your face!", response)
-        self.assertEqual(MemoryGetToKnowYou.State.GAZE, self.g2ky.state)
+        groupby.process("13")
+        self.assertEqual(["10", "11", "12"], group_events)
 
-        for i in range(9):
-            response = self.g2ky.persons_detected([("id1", Face(EMPTY_ARRAY, Gender.FEMALE, 1))])
-            self.assertIsNone(response)
-            self.assertEqual(MemoryGetToKnowYou.State.GAZE, self.g2ky.state)
+    def test_multiple_groups_keep_first(self):
+        group_events = dict()
+        grouping = SizeGroupProcessor(2, lambda events: group_events.update({events[0][0]: events}))
+        groupby = GroupByProcessor(grouping, key=lambda x: x[0])
 
-        response = self.g2ky.persons_detected([("id1", Face(EMPTY_ARRAY, Gender.FEMALE, 1))])
-        self.assertEqual("What is your name, stranger?", response)
-        self.assertEqual(MemoryGetToKnowYou.State.QUERY, self.g2ky.state)
+        self.assertEqual("1", groupby.get_key("10"))
 
-        response = self.g2ky.persons_detected([("id1", Face(EMPTY_ARRAY, Gender.FEMALE, 1))])
-        self.assertIsNone(response)
-        self.assertEqual(MemoryGetToKnowYou.State.QUERY, self.g2ky.state)
+        groupby.process("10")
+        groupby.process("20")
+        groupby.process("21")
+        groupby.process("22")
+        groupby.process("30")
+        self.assertEqual(0, len(group_events))
+        groupby.process("11")
+        groupby.process("12")
+        self.assertEqual(["10", "11"], group_events["1"])
 
-        response = self.g2ky.utterance_detected("Thomas")
-        self.assertEqual("So your name is Thomas?", response)
-        self.assertEqual(MemoryGetToKnowYou.State.CONFIRM, self.g2ky.state)
+        groupby.process("40")
+        groupby.process("41")
+        self.assertEqual(["40", "41"], group_events["4"])
 
-        response = self.g2ky.utterance_detected("Yes, it is!")
-        self.assertEqual("Nice to meet you, Thomas!", response)
-        self.assertEqual(MemoryGetToKnowYou.State.KNOWN, self.g2ky.state)
 
-        response = self.g2ky.utterance_detected("Bla")
-        self.assertIsNone(response)
-        self.assertEqual(MemoryGetToKnowYou.State.KNOWN, self.g2ky.state)
 
-        response = self.g2ky.persons_detected([("id1", Face(EMPTY_ARRAY, Gender.FEMALE, 1))])
-        self.assertIsNone(response)
-        self.assertEqual(MemoryGetToKnowYou.State.KNOWN, self.g2ky.state)
-
-        response = self.g2ky.persons_detected([("id2", Face(EMPTY_ARRAY, Gender.FEMALE, 1))])
-        self.assertEqual("Hi Stranger! We haven't met, let me look at your face!", response)
-        self.assertEqual(MemoryGetToKnowYou.State.GAZE, self.g2ky.state)
-
-    def test_utterance_while_gaze(self):
-        response = self.g2ky.persons_detected([("id1", Face(EMPTY_ARRAY, Gender.FEMALE, 1))])
-
-        response = self.g2ky.utterance_detected("Hallo!")
-        self.assertEqual("One more second, stranger, I'm memorizing your face.", response)
-        self.assertEqual(MemoryGetToKnowYou.State.GAZE, self.g2ky.state)
-
-    def test_utterance_before_seen(self):
-        self.assertEqual(MemoryGetToKnowYou.State.START, self.g2ky.state)
-
-        response = self.g2ky.utterance_detected("Hallo!")
-        self.assertEqual("Hi, I can't see you..", response)
-        self.assertEqual(MemoryGetToKnowYou.State.START, self.g2ky.state)
-
-        response = self.g2ky.persons_detected([("id1", Face(EMPTY_ARRAY, Gender.FEMALE, 1))])
-        self.assertEqual("Hi Stranger! We haven't met, let me look at your face!", response)
-        self.assertEqual(MemoryGetToKnowYou.State.GAZE, self.g2ky.state)
-
-    def test_name_incorrect(self):
-        response = self.g2ky.persons_detected([("id1", Face(EMPTY_ARRAY, Gender.FEMALE, 1))])
-        for i in range(10):
-            response = self.g2ky.persons_detected([("id1", Face(EMPTY_ARRAY, Gender.FEMALE, 1))])
-        response = self.g2ky.persons_detected([("id1", Face(EMPTY_ARRAY, Gender.FEMALE, 1))])
-        response = self.g2ky.utterance_detected("Thomass")
-        response = self.g2ky.utterance_detected("No, it is Thomas!")
-
-        self.assertEqual("Can you please repeat and only say your name!", response)
-        self.assertEqual(MemoryGetToKnowYou.State.QUERY, self.g2ky.state)
-
-        response = self.g2ky.utterance_detected("Thomas")
-        self.assertEqual("So your name is Thomas?", response)
-        self.assertEqual(MemoryGetToKnowYou.State.CONFIRM, self.g2ky.state)
-
-        response = self.g2ky.utterance_detected("Yes")
-        self.assertEqual("Nice to meet you, Thomas!", response)
-        self.assertEqual(MemoryGetToKnowYou.State.KNOWN, self.g2ky.state)
