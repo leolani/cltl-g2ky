@@ -14,7 +14,7 @@ class Group(abc.ABC):
         self._timestamp = timestamp_now()
 
     @property
-    def timestamp(self) -> bool:
+    def timestamp(self) -> int:
         return self._timestamp
 
     @property
@@ -43,13 +43,13 @@ class GroupByProcessor:
         self._key = key
         self._max_size = max_size
         self._completion_buffer = 10 * self._max_size
-        self._timeout = 10000
+        self._timeout = 10_000
 
     def process(self, event: Event):
         key = self.get_key(event)
 
         current = timestamp_now()
-        expired = [key for key, group in self._groups.items() if group.timestamp - current > self._timeout]
+        expired = [key for key, group in self._groups.items() if current - group.timestamp > self._timeout]
         for key in expired:
             logger.debug("Group %s timed out", key)
             self._groups.popitem(last=False)

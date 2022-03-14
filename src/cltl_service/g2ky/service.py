@@ -67,7 +67,6 @@ class GetToKnowYouService(GroupProcessor):
 
     def _process(self, event: Event[Union[TextSignalEvent, AnnotationEvent]]):
         response = None
-
         if event is None:
             response = self._g2ky.response()
         elif event.metadata.topic == self._utterance_topic:
@@ -79,7 +78,6 @@ class GetToKnowYouService(GroupProcessor):
             #     self._event_bus.publish(self._response_topic, Event.for_payload(speaker_event))
         elif event.metadata.topic in [self._image_topic, self._id_topic, self._face_topic]:
             self._face_processor.process(event)
-            return
 
         if response:
             response_payload = self._create_payload(response)
@@ -98,6 +96,7 @@ class GetToKnowYouService(GroupProcessor):
         return FaceGroup(image_id, self._face_topic, self._id_topic)
 
     def process_group(self, group):
+        logger.debug("Processing faces for image %s", group._img_id)
         response = self._g2ky.persons_detected(group.get_persons())
         if response:
             response_payload = self._create_payload(response)
