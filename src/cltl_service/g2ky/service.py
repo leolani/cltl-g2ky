@@ -13,110 +13,9 @@ from emissor.representation.annotation import AnnotationType
 from emissor.representation.scenario import TextSignal, Mention, Annotation
 
 from cltl.g2ky.api import GetToKnowYou
-from cltl_service.g2ky.groupby import GroupProcessor, Group, GroupByProcessor
+from cltl.combot.infra.groupby_processor import GroupProcessor, Group, GroupByProcessor
 
 logger = logging.getLogger(__name__)
-
-
-class GetToKnowYouService(GroupProcessor):
-    """
-    Service used to integrate the component into applications.
-    """
-    @classmethod
-    def from_config(cls, g2ky: GetToKnowYou, event_bus: EventBus, resource_manager: ResourceManager,
-                    config_manager: ConfigurationManager):
-        config = config_manager.get_config("cltl.g2ky.events")
-
-        return cls(config.get("utterance_topic"), config.get("image_topic"), config.get("face_topic"), config.get("id_topic"),
-                   config.get("response_topic"), g2ky, event_bus, resource_manager)
-
-    def __init__(self, utterance_topic: str, image_topic: str, face_topic: str, id_topic: str, response_topic: str,
-                 g2ky: GetToKnowYou, event_bus: EventBus, resource_manager: ResourceManager):
-        self._g2ky = g2ky
-
-        self._event_bus = event_bus
-        self._resource_manager = resource_manager
-
-        self._utterance_topic = utterance_topic
-        self._image_topic = image_topic
-        self._face_topic = face_topic
-        self._id_topic = id_topic
-        self._response_topic = response_topic
-
-        self._topic_worker = None
-        self._app = None
-
-        self._face_processor = GroupByProcessor(self, self.get_key)
-
-    def start(self, timeout=30):
-        self._topic_worker = TopicWorker([self._utterance_topic, self._image_topic, self._face_topic, self._id_topic],
-                                         self._event_bus,
-                                         provides=[self._response_topic],
-                                         resource_manager=self._resource_manager,
-                                         scheduled=0.1,
-                                         processor=self._process)
-        self._topic_worker.start().wait()
-
-    def stop(self):
-        if not self._topic_worker:
-            pass
-
-        self._topic_worker.stop()
-        self._topic_worker.await_stop()
-        self._topic_worker = None
-
-    def _process(self, event: Event[Union[TextSignalEvent, AnnotationEvent]]):
-        response = None
-        if event is None:
-            response = self._g2ky.response()
-        elif event.metadata.topic == self._utterance_topic:
-            response = self._g2ky.utterance_detected(event.payload.signal.text)
-            id, name = self._g2ky.speaker
-            # TODO
-            # if id and name:
-            #     speaker_event = self._create_speaker_payload(event.payload.signal, id, name)
-            #     self._event_bus.publish(self._response_topic, Event.for_payload(speaker_event))
-        elif event.metadata.topic in [self._image_topic, self._id_topic, self._face_topic]:
-            self._face_processor.process(event)
-
-        if response:
-            response_payload = self._create_payload(response)
-            self._event_bus.publish(self._response_topic, Event.for_payload(response_payload))
-
-    def _create_payload(self, response):
-        signal = TextSignal.for_scenario(None, timestamp_now(), timestamp_now(), None, response)
-
-        return TextSignalEvent.create(signal)
-
-    def _create_speaker_payload(self, signal: TextSignal, id: str, name: str):
-        speaker_annotation = Annotation(AnnotationType.UTTERANCE, (id, name), __name__, timestamp_now())
-        return Mention([signal.ruler], [speaker_annotation])
-
-    def new_group(self, image_id):
-        return FaceGroup(image_id, self._face_topic, self._id_topic)
-
-    def process_group(self, group):
-        logger.debug("Processing faces for image %s", group._img_id)
-        response = self._g2ky.persons_detected(group.get_persons())
-        if response:
-            response_payload = self._create_payload(response)
-            self._event_bus.publish(self._response_topic, Event.for_payload(response_payload))
-
-    def get_key(self, event):
-        if event.metadata.topic == self._image_topic:
-            return event.payload.signal.id
-        elif event.metadata.topic in [self._id_topic, self._face_topic]:
-            return self._get_image_id(event.payload.mentions)
-
-    def _get_image_id(self, mentions: Iterable[Mention]) -> str:
-        image_ids = {segment.container_id
-                     for mention in mentions
-                     for segment in mention.segment}
-
-        if len(image_ids) != 1:
-            raise ValueError("Expected exactly on image container, was %s", len(image_ids))
-
-        return next(iter(image_ids))
 
 
 class FaceGroup(Group):
@@ -128,6 +27,10 @@ class FaceGroup(Group):
         self._img_id = image_id
         self._faces = None
         self._ids = None
+
+    @property
+    def key(self) -> str:
+        return self._img_id
 
     @property
     def complete(self) -> bool:
@@ -182,3 +85,104 @@ class FaceGroup(Group):
             logger.warning("Got mention with more than one annotation: {}", annotations)
 
         return annotations[0].value
+
+
+class GetToKnowYouService(GroupProcessor):
+    """
+    Service used to integrate the component into applications.
+    """
+    @classmethod
+    def from_config(cls, g2ky: GetToKnowYou, event_bus: EventBus, resource_manager: ResourceManager,
+                    config_manager: ConfigurationManager):
+        config = config_manager.get_config("cltl.g2ky.events")
+
+        return cls(config.get("utterance_topic"), config.get("image_topic"), config.get("face_topic"), config.get("id_topic"),
+                   config.get("response_topic"), g2ky, event_bus, resource_manager)
+
+    def __init__(self, utterance_topic: str, image_topic: str, face_topic: str, id_topic: str, response_topic: str,
+                 g2ky: GetToKnowYou, event_bus: EventBus, resource_manager: ResourceManager):
+        self._g2ky = g2ky
+
+        self._event_bus = event_bus
+        self._resource_manager = resource_manager
+
+        self._utterance_topic = utterance_topic
+        self._image_topic = image_topic
+        self._face_topic = face_topic
+        self._id_topic = id_topic
+        self._response_topic = response_topic
+
+        self._topic_worker = None
+        self._app = None
+
+        self._face_processor = GroupByProcessor(self)
+
+    def start(self, timeout=30):
+        self._topic_worker = TopicWorker([self._utterance_topic, self._image_topic, self._face_topic, self._id_topic],
+                                         self._event_bus,
+                                         provides=[self._response_topic],
+                                         resource_manager=self._resource_manager,
+                                         scheduled=0.1,
+                                         processor=self._process)
+        self._topic_worker.start().wait()
+
+    def stop(self):
+        if not self._topic_worker:
+            pass
+
+        self._topic_worker.stop()
+        self._topic_worker.await_stop()
+        self._topic_worker = None
+
+    def _process(self, event: Event[Union[TextSignalEvent, AnnotationEvent]]):
+        response = None
+        if event is None:
+            response = self._g2ky.response()
+        elif event.metadata.topic == self._utterance_topic:
+            response = self._g2ky.utterance_detected(event.payload.signal.text)
+            id, name = self._g2ky.speaker
+            # TODO
+            # if id and name:
+            #     speaker_event = self._create_speaker_payload(event.payload.signal, id, name)
+            #     self._event_bus.publish(self._response_topic, Event.for_payload(speaker_event))
+        elif event.metadata.topic in [self._image_topic, self._id_topic, self._face_topic]:
+            self._face_processor.process(event)
+
+        if response:
+            response_payload = self._create_payload(response)
+            self._event_bus.publish(self._response_topic, Event.for_payload(response_payload))
+
+    def _create_payload(self, response):
+        signal = TextSignal.for_scenario(None, timestamp_now(), timestamp_now(), None, response)
+
+        return TextSignalEvent.create(signal)
+
+    def _create_speaker_payload(self, signal: TextSignal, id: str, name: str):
+        speaker_annotation = Annotation(AnnotationType.UTTERANCE, (id, name), __name__, timestamp_now())
+        return Mention([signal.ruler], [speaker_annotation])
+
+    def new_group(self, image_id) -> FaceGroup:
+        return FaceGroup(image_id, self._face_topic, self._id_topic)
+
+    def process_group(self, group: FaceGroup):
+        logger.debug("Processing faces for image %s", group.key)
+        response = self._g2ky.persons_detected(group.get_persons())
+        if response:
+            response_payload = self._create_payload(response)
+            self._event_bus.publish(self._response_topic, Event.for_payload(response_payload))
+
+    def get_key(self, event: Event) -> str:
+        if event.metadata.topic == self._image_topic:
+            return event.payload.signal.id
+        elif event.metadata.topic in [self._id_topic, self._face_topic]:
+            return self._get_image_id(event.payload.mentions)
+
+    def _get_image_id(self, mentions: Iterable[Mention]) -> str:
+        image_ids = {segment.container_id
+                     for mention in mentions
+                     for segment in mention.segment}
+
+        if len(image_ids) != 1:
+            raise ValueError("Expected exactly on image container, was %s", len(image_ids))
+
+        return next(iter(image_ids))
