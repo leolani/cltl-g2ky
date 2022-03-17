@@ -96,10 +96,15 @@ class GetToKnowYouService(GroupProcessor):
                     config_manager: ConfigurationManager):
         config = config_manager.get_config("cltl.g2ky.events")
 
-        return cls(config.get("utterance_topic"), config.get("image_topic"), config.get("face_topic"), config.get("id_topic"),
-                   config.get("response_topic"), g2ky, event_bus, resource_manager)
+        intention_topic = config.get("intention_topic") if "intention_topic" in config else None
+        intentions = config.get("intentions", multi=True) if "intentions" in config else []
+
+        return cls(config.get("utterance_topic"), config.get("image_topic"), config.get("face_topic"),
+                   config.get("id_topic"), config.get("response_topic"), intention_topic, intentions,
+                   g2ky, event_bus, resource_manager)
 
     def __init__(self, utterance_topic: str, image_topic: str, face_topic: str, id_topic: str, response_topic: str,
+                 intention_topic: str, intentions: List[str],
                  g2ky: GetToKnowYou, event_bus: EventBus, resource_manager: ResourceManager):
         self._g2ky = g2ky
 
@@ -111,6 +116,8 @@ class GetToKnowYouService(GroupProcessor):
         self._face_topic = face_topic
         self._id_topic = id_topic
         self._response_topic = response_topic
+        self._intention_topic = intention_topic
+        self._intentions = intentions
 
         self._topic_worker = None
         self._app = None
@@ -122,9 +129,14 @@ class GetToKnowYouService(GroupProcessor):
                                          self._event_bus,
                                          provides=[self._response_topic],
                                          resource_manager=self._resource_manager,
+                                         intention_topic=self._intention_topic, intentions=self._intentions,
                                          scheduled=0.1,
                                          processor=self._process)
         self._topic_worker.start().wait()
+
+        # TODO for now start the intention here
+        if self._intentions:
+            self._event_bus.publish(self._intention_topic, self._intentions[0])
 
     def stop(self):
         if not self._topic_worker:
