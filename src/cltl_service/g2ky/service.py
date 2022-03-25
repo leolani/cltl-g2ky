@@ -131,7 +131,8 @@ class GetToKnowYouService(GroupProcessor):
                                          resource_manager=self._resource_manager,
                                          intention_topic=self._intention_topic, intentions=self._intentions,
                                          scheduled=0.1,
-                                         processor=self._process)
+                                         processor=self._process,
+                                         name=self.__class__.__name__)
         self._topic_worker.start().wait()
 
         # TODO for now start the intention here
