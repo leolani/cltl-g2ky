@@ -22,11 +22,12 @@ setup(
     long_description=long_description,
     long_description_content_type="text/markdown",
     python_requires='>=3.8',
-    install_requires=['cltl.face-recognition'],
+    install_requires=['cltl.face-recognition', 'cltl.mention-detection'],
     extras_require={
         "impl": [],
         "service": [
             "emissor",
             "cltl.combot",
+            "cltl.emissor-data",
         ]}
 )

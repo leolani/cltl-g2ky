@@ -1,19 +1,23 @@
 import dataclasses
 import logging
+import uuid
 from typing import Union, Tuple, List, Iterable
 
+from cltl.combot.event.bdi import DesireEvent
 from cltl.combot.event.emissor import TextSignalEvent, AnnotationEvent
 from cltl.combot.infra.config import ConfigurationManager
 from cltl.combot.infra.event import Event, EventBus
+from cltl.combot.infra.groupby_processor import GroupProcessor, Group, GroupByProcessor
 from cltl.combot.infra.resource import ResourceManager
 from cltl.combot.infra.time_util import timestamp_now
 from cltl.combot.infra.topic_worker import TopicWorker
 from cltl.face_recognition.api import Face
-from emissor.representation.annotation import AnnotationType
+from cltl.nlp.api import Entity, EntityType
+from cltl.vector_id.api import VectorIdentity
+from cltl_service.emissordata.client import EmissorDataClient
 from emissor.representation.scenario import TextSignal, Mention, Annotation
 
 from cltl.g2ky.api import GetToKnowYou
-from cltl.combot.infra.groupby_processor import GroupProcessor, Group, GroupByProcessor
 
 logger = logging.getLogger(__name__)
 
@@ -92,22 +96,27 @@ class GetToKnowYouService(GroupProcessor):
     Service used to integrate the component into applications.
     """
     @classmethod
-    def from_config(cls, g2ky: GetToKnowYou, event_bus: EventBus, resource_manager: ResourceManager,
+    def from_config(cls, g2ky: GetToKnowYou, emissor_client: EmissorDataClient,
+                    event_bus: EventBus, resource_manager: ResourceManager,
                     config_manager: ConfigurationManager):
         config = config_manager.get_config("cltl.g2ky.events")
 
         intention_topic = config.get("intention_topic") if "intention_topic" in config else None
+        desire_topic = config.get("desire_topic") if "desire_topic" in config else None
         intentions = config.get("intentions", multi=True) if "intentions" in config else []
 
         return cls(config.get("utterance_topic"), config.get("image_topic"), config.get("face_topic"),
-                   config.get("id_topic"), config.get("response_topic"), intention_topic, intentions,
-                   g2ky, event_bus, resource_manager)
+                   config.get("id_topic"), config.get("response_topic"), config.get("speaker_topic"),
+                   intention_topic, desire_topic, intentions,
+                   g2ky, emissor_client, event_bus, resource_manager)
 
     def __init__(self, utterance_topic: str, image_topic: str, face_topic: str, id_topic: str, response_topic: str,
-                 intention_topic: str, intentions: List[str],
-                 g2ky: GetToKnowYou, event_bus: EventBus, resource_manager: ResourceManager):
+                 speaker_topic: str, intention_topic: str, desire_topic: str, intentions: List[str],
+                 g2ky: GetToKnowYou, emissor_client: EmissorDataClient,
+                 event_bus: EventBus, resource_manager: ResourceManager):
         self._g2ky = g2ky
 
+        self._emissor_client = emissor_client
         self._event_bus = event_bus
         self._resource_manager = resource_manager
 
@@ -116,7 +125,9 @@ class GetToKnowYouService(GroupProcessor):
         self._face_topic = face_topic
         self._id_topic = id_topic
         self._response_topic = response_topic
+        self._speaker_topic = speaker_topic
         self._intention_topic = intention_topic
+        self._desire_topic = desire_topic
         self._intentions = intentions
 
         self._topic_worker = None
@@ -127,17 +138,13 @@ class GetToKnowYouService(GroupProcessor):
     def start(self, timeout=30):
         self._topic_worker = TopicWorker([self._utterance_topic, self._image_topic, self._face_topic, self._id_topic],
                                          self._event_bus,
-                                         provides=[self._response_topic],
+                                         provides=[self._speaker_topic, self._response_topic],
                                          resource_manager=self._resource_manager,
                                          intention_topic=self._intention_topic, intentions=self._intentions,
                                          scheduled=0.1,
                                          processor=self._process,
                                          name=self.__class__.__name__)
         self._topic_worker.start().wait()
-
-        # TODO for now start the intention here
-        if self._intentions:
-            self._event_bus.publish(self._intention_topic, self._intentions[0])
 
     def stop(self):
         if not self._topic_worker:
@@ -154,10 +161,11 @@ class GetToKnowYouService(GroupProcessor):
         elif event.metadata.topic == self._utterance_topic:
             response = self._g2ky.utterance_detected(event.payload.signal.text)
             id, name = self._g2ky.speaker
-            # TODO
-            # if id and name:
-            #     speaker_event = self._create_speaker_payload(event.payload.signal, id, name)
-            #     self._event_bus.publish(self._response_topic, Event.for_payload(speaker_event))
+            if id and name:
+                speaker_event = self._create_speaker_payload(event.payload.signal, id, name)
+                self._event_bus.publish(self._speaker_topic, Event.for_payload(speaker_event))
+                if self._desire_topic:
+                    self._event_bus.publish(self._desire_topic, Event.for_payload(DesireEvent(["resolved"])))
         elif event.metadata.topic in [self._image_topic, self._id_topic, self._face_topic]:
             self._face_processor.process(event)
 
@@ -166,13 +174,24 @@ class GetToKnowYouService(GroupProcessor):
             self._event_bus.publish(self._response_topic, Event.for_payload(response_payload))
 
     def _create_payload(self, response):
-        signal = TextSignal.for_scenario(None, timestamp_now(), timestamp_now(), None, response)
+        scenario_id = self._emissor_client.get_current_scenario_id()
+        signal = TextSignal.for_scenario(scenario_id, timestamp_now(), timestamp_now(), None, response)
 
         return TextSignalEvent.create(signal)
 
-    def _create_speaker_payload(self, signal: TextSignal, id: str, name: str):
-        speaker_annotation = Annotation(AnnotationType.UTTERANCE, (id, name), __name__, timestamp_now())
-        return Mention([signal.ruler], [speaker_annotation])
+    def _create_speaker_payload(self, signal: TextSignal, id, name):
+        segment_start = signal.text.find(name)
+        if segment_start >= 0:
+            offset = signal.ruler.get_offset(segment_start, segment_start + len(name))
+        else:
+            offset = signal.ruler
+
+        ts = timestamp_now()
+
+        id_annotations = [Annotation(VectorIdentity.__name__, id, __name__, ts),
+                          Annotation(Entity.__name__, Entity(name, EntityType.SPEAKER, offset), __name__, ts)]
+
+        return AnnotationEvent.create([Mention(str(uuid.uuid4()), [offset], id_annotations)])
 
     def new_group(self, image_id) -> FaceGroup:
         return FaceGroup(image_id, self._face_topic, self._id_topic)
