@@ -133,7 +133,7 @@ class GetToKnowYouService(GroupProcessor):
         self._topic_worker = None
         self._app = None
 
-        self._face_processor = GroupByProcessor(self)
+        self._face_processor = GroupByProcessor(self, max_size=4, buffer_size=16)
 
     def start(self, timeout=30):
         self._topic_worker = TopicWorker([self._utterance_topic, self._image_topic, self._face_topic, self._id_topic],
@@ -141,7 +141,7 @@ class GetToKnowYouService(GroupProcessor):
                                          provides=[self._speaker_topic, self._response_topic],
                                          resource_manager=self._resource_manager,
                                          intention_topic=self._intention_topic, intentions=self._intentions,
-                                         scheduled=0.1,
+                                         scheduled=0.1, buffer_size=16,
                                          processor=self._process,
                                          name=self.__class__.__name__)
         self._topic_worker.start().wait()
@@ -208,6 +208,8 @@ class GetToKnowYouService(GroupProcessor):
             return event.payload.signal.id
         elif event.metadata.topic in [self._id_topic, self._face_topic]:
             return self._get_image_id(event.payload.mentions)
+
+        return None
 
     def _get_image_id(self, mentions: Iterable[Mention]) -> str:
         image_ids = {segment.container_id

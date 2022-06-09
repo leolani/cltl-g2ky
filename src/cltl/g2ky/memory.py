@@ -135,12 +135,13 @@ class MemoryGetToKnowYou(GetToKnowYou):
                     self._state = self.state.transition(ConvState.GAZE)
             elif self.state.conv_state == ConvState.GAZE:
                 self.state.faces.append((identifier, face))
+                # TODO config
                 if len(self.state.faces) == 5:
                     ids = list(zip(*self.state.faces))[0]
                     identifier = Counter(ids).most_common()[0][0]
                     if len(set(ids)) > 1:
-                        logger.debug("Filter multiple faces for %s", self.state.face_id)
-                        faces = [(id, face) for id, face in self.state.faces if id == self.state.face_id]
+                        logger.debug("Filter multiple faces for %s", identifier)
+                        faces = [(id, face) for id, face in self.state.faces if id == identifier]
                     else:
                         faces = self.state.faces
                     logger.debug("Memorized face for id %s", identifier)
