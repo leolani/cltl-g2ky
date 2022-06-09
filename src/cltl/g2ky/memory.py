@@ -61,7 +61,8 @@ class State:
 
 
 class MemoryGetToKnowYou(GetToKnowYou):
-    def __init__(self, friends: Mapping[str, str] = None):
+    def __init__(self, gaze_images: int = 5, friends: Mapping[str, str] = None):
+        self._gaze_images = gaze_images
         self._friends = dict(friends) if friends else dict()
         self._state = State(None, None, ConvState.START, [], 0)
 
@@ -135,8 +136,7 @@ class MemoryGetToKnowYou(GetToKnowYou):
                     self._state = self.state.transition(ConvState.GAZE)
             elif self.state.conv_state == ConvState.GAZE:
                 self.state.faces.append((identifier, face))
-                # TODO config
-                if len(self.state.faces) == 5:
+                if len(self.state.faces) == self._gaze_images:
                     ids = list(zip(*self.state.faces))[0]
                     identifier = Counter(ids).most_common()[0][0]
                     if len(set(ids)) > 1:
