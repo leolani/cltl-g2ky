@@ -68,7 +68,7 @@ class MemoryGetToKnowYou(GetToKnowYou):
 
     @property
     def speaker(self) -> Tuple[str, str]:
-        return self.state.face_id, self.state.name
+        return (self.state.face_id, self.state.name) if self._state.conv_state == ConvState.KNOWN else (None, None)
 
     @property
     def state(self) -> State:

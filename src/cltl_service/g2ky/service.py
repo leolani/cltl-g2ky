@@ -160,18 +160,19 @@ class GetToKnowYouService(GroupProcessor):
             response = self._g2ky.response()
         elif event.metadata.topic == self._utterance_topic:
             response = self._g2ky.utterance_detected(event.payload.signal.text)
-            id, name = self._g2ky.speaker
-            if id:
-                speaker_event = self._create_speaker_payload(event.payload.signal, id, name)
-                self._event_bus.publish(self._speaker_topic, Event.for_payload(speaker_event))
-                if self._desire_topic:
-                    self._event_bus.publish(self._desire_topic, Event.for_payload(DesireEvent(["resolved"])))
         elif event.metadata.topic in [self._image_topic, self._id_topic, self._face_topic]:
             self._face_processor.process(event)
 
         if response:
             response_payload = self._create_payload(response)
             self._event_bus.publish(self._response_topic, Event.for_payload(response_payload))
+
+        id, name = self._g2ky.speaker
+        if id and event and event.metadata.topic in [self._utterance_topic, self._image_topic]:
+            speaker_event = self._create_speaker_payload(event.payload.signal, id, name)
+            self._event_bus.publish(self._speaker_topic, Event.for_payload(speaker_event))
+            if self._desire_topic:
+                self._event_bus.publish(self._desire_topic, Event.for_payload(DesireEvent(["resolved"])))
 
     def _create_payload(self, response):
         scenario_id = self._emissor_client.get_current_scenario_id()
