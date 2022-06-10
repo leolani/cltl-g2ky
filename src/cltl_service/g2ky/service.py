@@ -161,7 +161,7 @@ class GetToKnowYouService(GroupProcessor):
         elif event.metadata.topic == self._utterance_topic:
             response = self._g2ky.utterance_detected(event.payload.signal.text)
             id, name = self._g2ky.speaker
-            if id and name:
+            if id:
                 speaker_event = self._create_speaker_payload(event.payload.signal, id, name)
                 self._event_bus.publish(self._speaker_topic, Event.for_payload(speaker_event))
                 if self._desire_topic:
@@ -177,7 +177,7 @@ class GetToKnowYouService(GroupProcessor):
         scenario_id = self._emissor_client.get_current_scenario_id()
         signal = TextSignal.for_scenario(scenario_id, timestamp_now(), timestamp_now(), None, response)
 
-        return TextSignalEvent.create(signal)
+        return TextSignalEvent.for_agent(signal)
 
     def _create_speaker_payload(self, signal: TextSignal, id, name):
         segment_start = signal.text.find(name)
