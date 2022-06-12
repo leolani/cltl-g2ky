@@ -19,3 +19,6 @@ class GetToKnowYou(abc.ABC):
     @property
     def speaker(self) -> Tuple[str, str]:
         raise NotImplementedError()
+
+    def clear(self):
+        raise NotImplementedError()

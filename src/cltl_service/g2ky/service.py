@@ -15,7 +15,7 @@ from cltl.face_recognition.api import Face
 from cltl.nlp.api import Entity, EntityType
 from cltl.vector_id.api import VectorIdentity
 from cltl_service.emissordata.client import EmissorDataClient
-from emissor.representation.scenario import TextSignal, Mention, Annotation
+from emissor.representation.scenario import TextSignal, Mention, Annotation, Signal, MultiIndex
 
 from cltl.g2ky.api import GetToKnowYou
 
@@ -141,7 +141,7 @@ class GetToKnowYouService(GroupProcessor):
                                          provides=[self._speaker_topic, self._response_topic],
                                          resource_manager=self._resource_manager,
                                          intention_topic=self._intention_topic, intentions=self._intentions,
-                                         scheduled=0.1, buffer_size=16,
+                                         scheduled=1, buffer_size=16,
                                          processor=self._process,
                                          name=self.__class__.__name__)
         self._topic_worker.start().wait()
@@ -168,11 +168,18 @@ class GetToKnowYouService(GroupProcessor):
             self._event_bus.publish(self._response_topic, Event.for_payload(response_payload))
 
         id, name = self._g2ky.speaker
-        if id and event and event.metadata.topic in [self._utterance_topic, self._image_topic]:
+        # TODO remember the right utterance
+        if id and name and event and event.metadata.topic in [self._utterance_topic]:
             speaker_event = self._create_speaker_payload(event.payload.signal, id, name)
             self._event_bus.publish(self._speaker_topic, Event.for_payload(speaker_event))
             if self._desire_topic:
                 self._event_bus.publish(self._desire_topic, Event.for_payload(DesireEvent(["resolved"])))
+
+            self._g2ky.clear()
+            self._topic_worker.clear()
+
+        if event:
+            logger.debug("Found %s, %s, response: %s", id, name, response)
 
     def _create_payload(self, response):
         scenario_id = self._emissor_client.get_current_scenario_id()
@@ -180,12 +187,12 @@ class GetToKnowYouService(GroupProcessor):
 
         return TextSignalEvent.for_agent(signal)
 
-    def _create_speaker_payload(self, signal: TextSignal, id, name):
-        segment_start = signal.text.find(name)
-        if segment_start >= 0:
-            offset = signal.ruler.get_offset(segment_start, segment_start + len(name))
-        else:
-            offset = signal.ruler
+    def _create_speaker_payload(self, signal: Signal, id, name):
+        offset = signal.ruler
+        if hasattr(signal, 'text'):
+            segment_start = signal.text.find(name)
+            if segment_start >= 0:
+                offset = signal.ruler.get_offset(segment_start, segment_start + len(name))
 
         ts = timestamp_now()
 
@@ -203,6 +210,29 @@ class GetToKnowYouService(GroupProcessor):
         if response:
             response_payload = self._create_payload(response)
             self._event_bus.publish(self._response_topic, Event.for_payload(response_payload))
+
+        id, name = self._g2ky.speaker
+        logger.debug("Found %s, %s, response: %s", id, name, response)
+        if id and name:
+            assert len(group._faces) > 0
+            face_key = next(iter(group._faces))
+            speaker_event = self._create_speaker_payload_for_img(face_key[0], face_key[1], id, name)
+            self._event_bus.publish(self._speaker_topic, Event.for_payload(speaker_event))
+            if self._desire_topic:
+                self._event_bus.publish(self._desire_topic, Event.for_payload(DesireEvent(["resolved"])))
+
+            self._g2ky.clear()
+            self._topic_worker.clear()
+
+    def _create_speaker_payload_for_img(self, img_id, bbox, id, name):
+        offset = MultiIndex(img_id, bbox)
+
+        ts = timestamp_now()
+
+        id_annotations = [Annotation(VectorIdentity.__name__, id, __name__, ts),
+                          Annotation(Entity.__name__, Entity(name, EntityType.SPEAKER, offset), __name__, ts)]
+
+        return AnnotationEvent.create([Mention(str(uuid.uuid4()), [offset], id_annotations)])
 
     def get_key(self, event: Event) -> str:
         if event.metadata.topic == self._image_topic:

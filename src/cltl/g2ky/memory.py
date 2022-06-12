@@ -90,7 +90,7 @@ class MemoryGetToKnowYou(GetToKnowYou):
         elif self.state.conv_state == ConvState.QUERY:
             name = " ".join([foo.title() for foo in utterance.strip().split()])
             response = f"So your name is {name}?"
-            self._state = self.state.transition(ConvState.CONFIRM, name= name)
+            self._state = self.state.transition(ConvState.CONFIRM, name=name)
         elif self.state.conv_state == ConvState.CONFIRM:
             if "yes" in utterance.strip().lower():
                 self._friends[self.state.face_id] = self.state.name
@@ -131,6 +131,7 @@ class MemoryGetToKnowYou(GetToKnowYou):
                     name = self._friends[identifier]
                     response = f"Nice to meet you again {name}!"
                     self._state = self.state.transition(ConvState.KNOWN, face_id=identifier, name=name)
+                    logger.debug("Recognized known face id %s for %s", identifier, name)
                 else:
                     response = f"Hi Stranger! We haven't met, let me look at your face!"
                     self._state = self.state.transition(ConvState.GAZE)
@@ -152,3 +153,6 @@ class MemoryGetToKnowYou(GetToKnowYou):
 
     def response(self) -> Optional[str]:
         return None
+
+    def clear(self):
+        self._state = self._state.transition(ConvState.START)
