@@ -60,7 +60,7 @@ class State:
         return State(**new_state)
 
 
-class MemoryGetToKnowYou(GetToKnowYou):
+class VisualGetToKnowYou(GetToKnowYou):
     def __init__(self, gaze_images: int = 5, friends: Mapping[str, str] = None):
         self._gaze_images = gaze_images
         self._friends = dict(friends) if friends else dict()

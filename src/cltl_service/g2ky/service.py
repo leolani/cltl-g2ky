@@ -136,14 +136,13 @@ class GetToKnowYouService(GroupProcessor):
         self._face_processor = GroupByProcessor(self, max_size=4, buffer_size=16)
 
     def start(self, timeout=30):
-        self._topic_worker = TopicWorker([self._utterance_topic, self._image_topic, self._face_topic, self._id_topic],
-                                         self._event_bus,
+        topics = [self._utterance_topic, self._image_topic, self._face_topic, self._id_topic, self._intention_topic]
+        self._topic_worker = TopicWorker(topics, self._event_bus,
                                          provides=[self._speaker_topic, self._response_topic],
                                          resource_manager=self._resource_manager,
                                          intention_topic=self._intention_topic, intentions=self._intentions,
                                          scheduled=1, buffer_size=16,
-                                         processor=self._process,
-                                         name=self.__class__.__name__)
+                                         processor=self._process, name=self.__class__.__name__)
         self._topic_worker.start().wait()
 
     def stop(self):
@@ -156,7 +155,7 @@ class GetToKnowYouService(GroupProcessor):
 
     def _process(self, event: Event[Union[TextSignalEvent, AnnotationEvent]]):
         response = None
-        if event is None:
+        if event is None or self._is_g2ky_intention(event):
             response = self._g2ky.response()
         elif event.metadata.topic == self._utterance_topic:
             response = self._g2ky.utterance_detected(event.payload.signal.text)
@@ -180,6 +179,11 @@ class GetToKnowYouService(GroupProcessor):
 
         if event:
             logger.debug("Found %s, %s, response: %s", id, name, response)
+
+    def _is_g2ky_intention(self, event):
+        return (event.metadata.topic == self._intention_topic
+                and hasattr(event.payload, "intentions")
+                and 'g2ky' in event.payload.intentions)
 
     def _create_payload(self, response):
         scenario_id = self._emissor_client.get_current_scenario_id()

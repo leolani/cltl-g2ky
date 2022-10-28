@@ -5,14 +5,14 @@ from cltl.backend.api.camera import Bounds
 from cltl.face_recognition.api import Face
 from emissor.representation.entity import Gender
 
-from cltl.g2ky.memory import MemoryGetToKnowYou, ConvState
+from cltl.g2ky.visual import VisualGetToKnowYou, ConvState
 
 
 EMPTY_ARRAY = np.empty((0,))
 
 class TestMemoryG2KY(unittest.TestCase):
     def setUp(self) -> None:
-        self.g2ky = MemoryGetToKnowYou()
+        self.g2ky = VisualGetToKnowYou()
 
     def test_regular_flow(self):
         self.assertEqual(ConvState.START, self.g2ky.state.conv_state)
