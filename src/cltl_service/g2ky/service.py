@@ -101,12 +101,12 @@ class GetToKnowYouService(GroupProcessor):
                     config_manager: ConfigurationManager):
         config = config_manager.get_config("cltl.g2ky.events")
 
-        intention_topic = config.get("intention_topic") if "intention_topic" in config else None
-        desire_topic = config.get("desire_topic") if "desire_topic" in config else None
+        intention_topic = config.get("topic_intention") if "topic_intention" in config else None
+        desire_topic = config.get("topic_desire") if "topic_desire" in config else None
         intentions = config.get("intentions", multi=True) if "intentions" in config else []
 
-        return cls(config.get("utterance_topic"), config.get("image_topic"), config.get("face_topic"),
-                   config.get("id_topic"), config.get("response_topic"), config.get("speaker_topic"),
+        return cls(config.get("topic_utterance"), config.get("topic_image"), config.get("topic_face"),
+                   config.get("topic_id"), config.get("topic_response"), config.get("topic_speaker"),
                    intention_topic, desire_topic, intentions,
                    g2ky, emissor_client, event_bus, resource_manager)
 
