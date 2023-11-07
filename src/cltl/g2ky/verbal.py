@@ -1,7 +1,8 @@
 import dataclasses
 import enum
 import logging
-from typing import Optional, Tuple, Iterable
+import uuid
+from typing import Optional, Tuple, Iterable, Mapping
 
 from cltl.face_recognition.api import Face
 
@@ -56,7 +57,8 @@ class State:
 
 
 class VerbalGetToKnowYou(GetToKnowYou):
-    def __init__(self):
+    def __init__(self, friends: Mapping[str, str] = None):
+        self._friends = {name: id for id, name in friends.items()} if friends else dict()
         self._state = State(None, None, ConvState.START)
 
     @property
@@ -77,7 +79,9 @@ class VerbalGetToKnowYou(GetToKnowYou):
         elif self.state.conv_state == ConvState.QUERY:
             name = " ".join([foo.title() for foo in utterance.strip().split()])
             response = f"So your name is {name}?"
-            self._state = self.state.transition(ConvState.CONFIRM, name=name, face_id=name.lower())
+            if name not in self._friends:
+                self._friends[name] = str(uuid.uuid4())
+            self._state = self.state.transition(ConvState.CONFIRM, name=name, face_id=self._friends[name])
         elif self.state.conv_state == ConvState.CONFIRM:
             if "yes" in utterance.strip().lower():
                 response = f"Nice to meet you, {self.state.name}!"
