@@ -183,7 +183,7 @@ class GetToKnowYouService(GroupProcessor):
     def _is_g2ky_intention(self, event):
         return (event.metadata.topic == self._intention_topic
                 and hasattr(event.payload, "intentions")
-                and 'g2ky' in event.payload.intentions)
+                and any('g2ky' == intention.label for intention in event.payload.intentions))
 
     def _create_payload(self, response):
         scenario_id = self._emissor_client.get_current_scenario_id()
